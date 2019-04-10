@@ -1,0 +1,159 @@
+---
+title: "Looking at Traffic Stops in Hartford, CT"
+author: "Niel Schrage"
+date: "4/10/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+# loaded libraries 
+
+library(tidyverse)
+library(ggthemes)
+library(fs)
+library(dplyr)
+library(gt)
+library(lubridate)
+library("sf")
+library(mapproj)
+library(viridis)
+library(gganimate)
+library(ggmap)
+library(ggplot2)
+library(tweenr)
+```
+
+```{r load data, echo = FALSE, cache=TRUE}
+
+# downloaded and read in hartford rds file from stanford policing project
+
+hartford <- read_rds(url("https://stacks.stanford.edu/file/druid:tr137st9964/tr137st9964_ct_hartford_2019_02_25.rds"))
+
+# downladed shapefiles for hartford from stanford policing project
+
+download.file(url = "https://stacks.stanford.edu/file/druid:tr137st9964/tr137st9964_ct_hartford_shapefiles_2019_02_25.tgz", destfile = "shapes.tgz", 
+              quiet = TRUE)
+
+# untared shapes file which allowed access to neighborhood shp file
+
+untar("shapes.tgz")
+
+# read in shp file to shapes data
+
+shapes_data <- read_sf("ct_hartford_shapefiles/Hartford_Neighborhoods.shp")
+
+# deleted files after using them
+
+file_delete(c("shapes.tgz", "ct_hartford_shapefiles/"))
+
+```
+
+## Traffic Arrests by Time of Day in Hartford, CT
+```{r time, echo=FALSE, message=FALSE, warning=FALSE, results='asis'}
+c <- hartford %>% 
+   
+  # created plot with x variable as time
+  
+  ggplot(aes(x = time)) + 
+  
+  # established the graph as a histogram with as many bins as there are min in a day (1440)
+  
+  geom_histogram(bins = 1440) + 
+  
+  # titled and captioned the graph appropriately 
+  
+  labs(title = "Traffic Stops by Time of Day in Hartford, CT", 
+         caption = "Stanford Open Policing Data") + 
+  
+  # added X and Y axis labels
+  
+  xlab("Time of Day") +
+  ylab("# of Traffic Stops") +
+   
+  # put on a minimialist theme based on Edward Tufte 
+  
+  theme_tufte()
+
+# printed out graph so it appears on markdown doc
+
+c
+
+```
+
+## Individual Officer Traffic Arrests by Date in Hartford, CT
+```{r indv_setup, echo=FALSE, warning=FALSE, results="asis", cache=TRUE}
+
+# something that stood out to me, that I wanted to explore in more depth from
+# more of a policy side was looking at how individual officers went about their
+# jobs over a long period of time... interesting pattern emerged...
+# potentially could be used to create better governance/oversight of police
+
+officers <- hartford %>% 
+  
+  # filtered for stops which resulted in arrests
+  
+  filter(arrest_made == "TRUE") %>% 
+  
+  # filtered for a single specific officer
+  
+  filter(officer_id_hash == "09739d95d7") %>%
+  
+  # filtered out results above a certain longitiude -- outside of city limits + messed up my graph
+  
+  filter(lng < 72.65) %>% 
+  
+  # dropped results which didn't have recorded location or timing data
+  
+  drop_na(lat, lng, time, date) %>% 
+  
+  # selected the columns I wanted to use in graph
+  
+  select(date, lat, lng, subject_race, subject_sex) 
+
+# turned the rows to an SF object as described in the 3 part series... cutting edge of R. 
+
+arrest_locations <- st_as_sf(officers, coords = c("lng", "lat"), crs = 4326)
+
+
+
+```
+
+```{r graphic, echo=FALSE}
+# created a plot, first with the shapes data that I collected earlier
+
+ggplot(data = shapes_data) +
+  
+  # putting the first geom_sf layer down for the shapes data
+  
+  geom_sf() +
+  
+  # putting another geom_sf layer down, this time with the arrest location data we want to plot
+  
+  geom_sf(data = arrest_locations) +
+
+  # added title, subtitle, caption to make graph easier to understand
+  
+  labs(title = "Arrest Locations for Officer 09739d95d7",
+       
+       # included special line of code {here} to update as the date moved with the animation
+       
+       subtitle = "Date: {frame_time}", 
+       caption = "Source: Stanford Open Policing Project" ) +
+  
+  # added x and y axis labels
+  
+  xlab("Longitude") + 
+  ylab("Latitude") +
+  
+  # added the map and minimualist tufte themes that I like. 
+  
+  theme_map() +
+  theme_tufte() +
+  
+  # gganimated the graph to progressively show the arrests by date
+  
+  transition_time(date)
+
+```
+
